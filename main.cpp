@@ -1,8 +1,36 @@
-#include "hexgraph.h"
-#include "board.h"
-#include <set>
+#include <vector>
+#include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <math.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
+#include <SDL2/SDL.h>
 
-//Point class
+using namespace std;
+
+#define _USE_MATH_DEFINES
+
+const double PI = M_PI;
+bool quit = false;
+SDL_Renderer 	* gRenderer = NULL;
+SDL_Window 	* gWindow = NULL;
+
+//Point class for doing 2D maths
+class Point {
+	public:
+		int x;
+		int y;
+		Point rotate(double angle);
+		Point operator +(class Point p);
+
+		Point();
+		Point(int X, int Y);
+};
+
 Point::Point() {
 	x = 0;
 	y = 0;
@@ -13,8 +41,8 @@ Point::Point() {
 vector <char> color (int hex) {
 	int r, g, b;
 	r = (hex >> 16) & 0xff;
-	g = (hex >> 8) & 0xff;
-	b = (hex) & 0xff;
+	g = (hex >> 8) 	& 0xff;
+	b = (hex) 	& 0xff;
 
 	vector <char> color;
 	color.push_back(r);
@@ -24,9 +52,9 @@ vector <char> color (int hex) {
 	return color;
 }
 
-vector <char> player_color	= color(0xee5d6c);
-vector <char> hex_color		= color(0xeeaf61);
-vector <char> bg_color		= color(0x000000);
+vector <char> buddy_color = color(0xee5d6c);
+vector <char> hex_color	  = color(0xeeaf61);
+vector <char> bg_color	  = color(0x000000);
 
 Point::Point(int X, int Y) {
 	x = X;
@@ -35,11 +63,20 @@ Point::Point(int X, int Y) {
 	return;
 }
 
+class Board {
+	public:
+		bool processEvents();
+		void gameloop();
+		void render();
+		void close();
+		void restart();
+		Board();
+	private:
+		vector <class Buddy> buddies;
+};
+
 const int SCREEN_W = 500;
 const int SCREEN_H = 500;
-
-set <int> steps; //Points that the game gets harder
-bool AI_enable = false;
 
 //Adds two points
 Point Point::operator +(class Point p) {
@@ -80,198 +117,83 @@ void drawLine(Point p1, Point p2, SDL_Renderer * gRenderer, vector <char> & colo
 	return;
 }
 
+vector <Point> buddyPoints;
 
-//Player impltementation
-Player::Player(){
-	angle = PI/6;
-	movingRight = false;
-	movingLeft = false;
+class Buddy {
+	public:
+		void Draw(SDL_Renderer * gRenderer);
+		Point findFood();
+		void goToTarget(Point p);
+		
+		int xPos;
+		int yPos;
+		double angle;
+};
 
-	pts.resize(5);
-	pts[0] = Point(0, 10);
-	pts[1] = Point(5, 0);
-	pts[2] = Point(0, 3);
-	pts[3] = Point(-5, 0);
-	pts[4] = Point(0, 10);
-
-	return;
-}
-
-void Player::Draw(SDL_Renderer * gRenderer) {
+void Buddy::Draw(SDL_Renderer * gRenderer) {
 	Point p1, p2;
 
 	int centerx, centery;
-	centerx = SCREEN_W/2 + 50*cos(angle);
-	centery = SCREEN_H/2 + 50*sin(angle);
+	centerx = SCREEN_W/2 + xPos;
+	centery = SCREEN_H/2 + yPos;
 
 	Point center(centerx, centery);
 
-	for (int i = 0; i < pts.size() - 1; i++) {
-		p1 = pts[i].rotate(angle - PI/2) + center;
-		p2 = pts[i+1].rotate(angle - PI/2) + center;
+	for (int i = 0; i < buddyPoints.size() - 1; i++) {
+		p1 = buddyPoints[i].rotate(angle - PI/2) + center;
+		p2 = buddyPoints[i+1].rotate(angle - PI/2) + center;
 
-		drawLine(p1, p2, gRenderer, player_color);
+		drawLine(p1, p2, gRenderer, buddy_color);
 	}
 
 	return;
 }
 
-void Player::interpath(int target){
-		//A bit of error checking
-		if (angle < 0) angle += 2*PI;
-		if (angle > 2*PI) angle -= 2*PI;
-
-		//Target angle that the AI tries to get to (a little broken at the moment)
-		double t_angle = target * PI/3;
-
-		//More error checking
-		if (target == -1) {
-			t_angle = angle;
-		} else {
-			if (t_angle > 2*PI) t_angle -= 2*PI;
-		}
-
-		//Centers t_angle in middle of sector
-		t_angle += PI/6.0;	
-
-		if (t_angle < 0)
-			t_angle += 2*PI;
-		else if (t_angle > 2*PI) 
-			t_angle -= 2*PI;
-
-		//The part that does the work
-		if (abs(t_angle - angle) > 0.15) {
-			double difference = t_angle - angle;
-			if(difference >= 0 and difference <= PI) {
-				angle += 0.15;
-				//player.angle = t_angle;
-			} else {
-				angle -= 0.15;
-				//player.angle = t_angle;
-			}
-
-		}
-
+//Tries to find the nearest food (center otherwise)
+Point Buddy::findFood() {
+	return Point(120, -90);
 }
 
-//Shell implementation
-void Shell::genRandom(int difficulty){
-	int random_i;
-	int numWalls = 0;
-
-	for (int i = 0; i < 6; i++) {
-		walls[i] = 0;
-	}
-
-	while (numWalls < difficulty) {
-		random_i = rand()%6;
-
-		walls[random_i] = 1;
-		numWalls += 1;
-	}
+//Goes to a point in 2D space
+void Buddy::goToTarget(Point p) {
+	if (p.x > xPos) xPos += 1;
+	if (p.x < xPos) xPos -= 1;
+	if (p.y > yPos) yPos += 1;
+	if (p.y < yPos) yPos -= 1;
 
 	return;
 }
 
-//Draws one side of a hexagon as a trapezoid with 1px thick lines
-void Shell::drawHexSide(int width, int radius, double theta, SDL_Renderer * gRenderer) {
-	int centerx = SCREEN_W / 2;
-	int centery = SCREEN_H / 2;
-	Point p1, p2, p3, p4;
-
-	p1.x = radius * cos(theta) + centerx;
-	p1.y = radius * sin(theta) + centery;
-
-	p2.x = radius * cos(theta + PI/3) + centerx;
-	p2.y = radius * sin(theta + PI/3) + centery;
-
-	p3.x = (radius + width) * cos(theta + PI/3) + centerx;
-	p3.y = (radius + width) * sin(theta + PI/3) + centery;
-
-	p4.x = (radius + width) * cos(theta) + centerx;
-	p4.y = (radius + width) * sin(theta) + centery;
-
-	drawLine(p1, p2, gRenderer, hex_color);
-	drawLine(p2, p3, gRenderer, hex_color);
-	drawLine(p3, p4, gRenderer, hex_color);
-	drawLine(p4, p1, gRenderer, hex_color);
-
-	return;
-}
-
-//Draws a hexagon shell based on the walls array
-void Shell::Draw(SDL_Renderer * gRenderer){
-	double angle;
-
-	for (int i = 0; i < 6; i++) {
-		if (walls[i]) {
-			angle = i * PI/3;
-			drawHexSide(10, size, angle, gRenderer);
-		}
-	}
-
-	return;
-}
-
-//Board Implementation
-
-//Initializes the game data SDL objects
-Board::Board(){
-	player = Player();
-	AI_enable = false;	
-	quit = false;
-
-	difficulty = 1;
-	counter = 1;
-	shellcount = 0;
-
-	shells[0].size = 200;
-	shells[1].size = 325;
-	shells[2].size = 450;
-	shells[0].genRandom(difficulty);
-	shells[1].genRandom(difficulty);
-	shells[2].genRandom(difficulty);
-
+bool init() {
 	if (SDL_Init(SDL_INIT_EVERYTHING) < 0){
 		printf("SDL couldn't initialize");
+		return false;
 	}
 
 
 	gWindow = SDL_CreateWindow("SDL Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_W, SCREEN_H, SDL_WINDOW_RESIZABLE);
 	gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_PRESENTVSYNC);
+
+	return true;
 }
 
+Board::Board() {
+	if (init()) {
+		Buddy b;
+		b.xPos = 0;
+		b.yPos = 0;
+
+		buddies.push_back(b);
+
+		gameloop();
+	}
+}
 
 //Contains the main loop for the game
 void Board::gameloop(){
 	while (not quit) {
-
 		//get events (inputs, x button, etc)
-		processEvents(false);
-
-		if (steps.find(counter) != steps.end()) {
-			difficulty += 1;
-			counter += 1;
-			printf("Difficulty up to %d\n", difficulty);
-		}
-
-		//Now handle player movement
-		if (player.movingLeft){
-			player.angle -= 0.1;
-			//cout << player.angle << endl;
-		}
-		if (player.movingRight){
-			player.angle += 0.1;	
-			//cout << player.angle << endl;
-		}
-
-		//Makes sure the player is within [0, 2PI]
-		if (player.angle > 2.0*PI) {
-			player.angle = player.angle - 2.0*PI;
-		} else if (player.angle < 0) {
-			player.angle = player.angle + 2.0*PI;
-		}
-
+		processEvents();
 		render();
 	}
 
@@ -280,9 +202,11 @@ void Board::gameloop(){
 
 
 //Handles event processing
-bool Board::processEvents(bool AI){
-
+bool Board::processEvents(){
 	//get events (inputs, x button, etc)
+	//
+	SDL_Event e;
+
 	while (SDL_PollEvent(&e) != 0){
 		if (e.type == SDL_QUIT){
 			quit = true;
@@ -290,49 +214,11 @@ bool Board::processEvents(bool AI){
 		}
 		if (e.type == SDL_KEYDOWN){
 			switch (e.key.keysym.sym){
-				case 'a': //A
-					if (!AI_enable) {
-						if (not player.movingLeft) {
-							player.movingLeft = true;
-						}
-					}
-					break;
-				case 'd': //D
-					if (!AI_enable) {
-						if (not player.movingRight) {
-							player.movingRight = true;
-						}
-					}
+				default:
 					break;
 			}
 		} else if (e.type == SDL_KEYUP){
 			switch (e.key.keysym.sym){
-				case 'a':
-					if (!AI_enable) {
-						player.movingLeft = false;
-					}
-					break;
-				case 'd':
-					if (!AI_enable) {
-						player.movingRight = false;
-					}
-					break;
-				case 13:
-					printf("Pressed enter\n");
-					start = true;
-					restart(); 
-					SDL_Delay(300);
-					quit = false;
-					AI_enable = false;
-					return false;
-				case 'x':
-					printf("Enabling AI...\n");
-					start = true;
-					restart();
-					SDL_Delay(300);
-					quit = false;
-					AI_enable = true;
-					return false;
 				case 'q':
 					printf("Quitting\n");
 					quit = true;
@@ -340,98 +226,29 @@ bool Board::processEvents(bool AI){
 			}
 		}
 	}
+
 	return true;
 }
-
-double dec(int difficulty) {
-	switch (difficulty){
-		case 1:
-			return 1.5;
-		case 2:
-			return 2;
-		case 3:
-			return 2.5;
-		case 4:
-			return 3.5;
-		case 5:
-			return 5;
-	}
-}
-
-int target;
 
 //Draws and animates board
 void Board::render(){
 	int centerx = SCREEN_W / 2;
 	int centery = SCREEN_H / 2;
-	int maxrank = 2;
 
 	SDL_SetRenderDrawColor(gRenderer, bg_color[0], bg_color[1], bg_color[2], 255);
 	SDL_RenderClear(gRenderer);
 
-	int p_sector = (player.angle / (PI/3));		//current sector of hexagon the player is located in
-
-	for (int i = 0; i < 3; i++) {				//decreases size of shells to animate them moving towards the center
-		shells[i].size -= dec(difficulty);
-		if (shells[i].size <= 0) {				//if shell reaches center, generate a new shell and hexgraph
-			shells[i].size = 400;
-			shells[i].genRandom(difficulty);
-			counter += 1;
-			shellcount++;
-			//printf("%d shells survived\n", shellcount);
-		}
-
-		if (abs(shells[i].size - 50) <= 10) {			//checks collision when the size of shell is close enough to the player's path radius
-			if (shells[i].walls[p_sector]) {
-				printf("You lasted %d shells\n", shellcount);
-				printf("You died! \nPress enter to restart with control\nPress q to quit\nPress x to restart AI\n");
-				while(processEvents(false)){
-						continue;
-				}
-			}
-		}
-
-		shells[i].Draw(gRenderer);
-	}
-
-	//Determine maxrank, the ordering of shells
-	int maxSize = shells[0].size;
-	maxrank = 0;
-
-	for(int i = 0; i < 3; i++){
-		if(shells[i].size > maxSize)
-			maxrank = i;
-	}
-
-	Hexgraph *hg;
-	if(maxrank == 2){
-		hg = new Hexgraph(shells[0].walls, shells[1].walls, shells[2].walls);
-		target = hg->findPath(p_sector);
-	}else if(maxrank == 1){
-		hg = new Hexgraph(shells[2].walls, shells[0].walls, shells[1].walls);
-		target = hg->findPath(p_sector);
-	} else {
-		hg = new Hexgraph(shells[1].walls, shells[2].walls, shells[0].walls);
-		target = hg->findPath(p_sector);
-	}
-	//hg->print();
-	//cout << "Passed Player Pos: " << p_sector << endl;
-
-	if (AI_enable && target != p_sector) {
-		player.interpath(target);
-		//printf("target: %10d t_angle: %f\n", target, t_angle);
-	}
-
-	//Draw the player to the screen
-	player.Draw(gRenderer);
-
-
 	//Update the window when all done
 	//SDL_UpdateWindowSurface(gWindow);
-	SDL_RenderPresent(gRenderer);
+	
+	for (int i = 0; i < buddies.size(); i++) {
+		Point target = buddies[i].findFood();
+		buddies[i].goToTarget(target);
+		printf("Buddy: %d %d\n", buddies[i].xPos, buddies[i].yPos);
+		buddies[i].Draw(gRenderer);
+	}
 
-	//Waiting 16 milliseconds, i.e. 60 fps
-	SDL_Delay(16);
+	SDL_RenderPresent(gRenderer);
 }
 
 void Board::close(){
@@ -442,45 +259,23 @@ void Board::close(){
 }
 
 void Board::restart(){
-	difficulty = 1;
-	counter = 1;
-	shellcount = 0;
-
-	shells[0].size = 200;
-	shells[1].size = 325;
-	shells[2].size = 450;
-
-	shells[0].genRandom(difficulty);
-	shells[1].genRandom(difficulty);
-	shells[2].genRandom(difficulty);
-
-	player.angle = PI/6;	
-
 	SDL_SetRenderDrawColor(gRenderer, bg_color[0], bg_color[1], bg_color[2], 255);
 	SDL_RenderClear(gRenderer);
 	SDL_RenderPresent(gRenderer);
-
-	//srand(time(NULL));
 }	
 
-
-//
-//Main
 int main(){
-	printf("You are a humble triangle trapped in a world dominated by hexagons.\n");
-	printf("You must find your way out. Avoid the hexagon walls, using A to move left and D to move right.\n");
-	printf("Press enter to begin your journey again.\nPress X for help on your journey.\n");
-	printf("Press q to give up on your journey.\n");
-
-	steps.insert(10);
-	steps.insert(15);
-	steps.insert(35);
-	steps.insert(65);
-	steps.insert(10000);
 	srand(time(NULL));
 
+	buddyPoints.push_back(Point(0, 10));
+	buddyPoints.push_back(Point(8, 0));
+	buddyPoints.push_back(Point(3, 0));
+	buddyPoints.push_back(Point(0, 2));
+	buddyPoints.push_back(Point(-3, 0));
+	buddyPoints.push_back(Point(-8, 0));
+	buddyPoints.push_back(Point(0, 10));
+
 	Board myBoard = Board();
-	myBoard.gameloop();
 
 	return 0;
 }
